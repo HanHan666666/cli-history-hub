@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Code History Viewer</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h1>Claude Code</h1>
+        <p class="subtitle">History Viewer</p>
+      </div>
+      <div class="sidebar-actions">
+        <button id="globalSearchBtn" class="sidebar-btn" title="Global Search">&#128269; Search</button>
+        <button id="statsBtn" class="sidebar-btn" title="Statistics">&#128202; Stats</button>
+      </div>
+      <nav id="projectList"></nav>
+    </aside>
+
+    <!-- Main content -->
+    <main id="content">
+      <!-- Welcome view -->
+      <div id="welcomeView" class="view active">
+        <div class="welcome">
+          <h2>Claude Code History Viewer</h2>
+          <p>Select a project from the sidebar to browse conversation history.</p>
+        </div>
+      </div>
+
+      <!-- Session list view -->
+      <div id="sessionListView" class="view">
+        <div class="view-header session-list-header">
+          <h2 id="sessionListTitle"></h2>
+          <span id="sessionCount" class="badge"></span>
+          <div class="header-actions">
+            <select id="branchFilter" class="filter-select">
+              <option value="">All Branches</option>
+            </select>
+            <input type="text" id="sessionSearchInput" placeholder="Filter sessions...">
+          </div>
+        </div>
+        <div id="sessionList" class="session-list"></div>
+      </div>
+
+      <!-- Chat detail view -->
+      <div id="chatView" class="view">
+        <div class="view-header chat-header">
+          <button id="backBtn" class="btn-icon" title="Back">&larr;</button>
+          <div class="chat-title-wrap">
+            <button id="favoriteBtn" class="btn-fav" title="Toggle Favorite">&#9734;</button>
+            <h2 id="chatTitle" class="editable-title"></h2>
+            <button id="renameBtn" class="btn-icon-sm" title="Rename">&#9998;</button>
+          </div>
+          <div class="chat-header-right">
+            <button id="tagBtn" class="btn-sm" title="Manage Tags">&#127991; Tags</button>
+            <button id="exportBtn" class="btn-sm" title="Export">&#128228; Export</button>
+          </div>
+          <div class="chat-meta-bar">
+            <span id="chatMeta"></span>
+            <span id="chatTags" class="tags-display"></span>
+          </div>
+        </div>
+        <div id="chatMessages" class="chat-messages">
+          <div id="loadMoreTop" class="load-more hidden">
+            <button id="loadMoreBtn" class="btn-sm">Load earlier messages</button>
+          </div>
+          <div id="messagesContainer"></div>
+        </div>
+      </div>
+
+      <!-- Stats view -->
+      <div id="statsView" class="view">
+        <div class="view-header">
+          <button id="statsBackBtn" class="btn-icon" title="Back">&larr;</button>
+          <h2>Token Usage Statistics</h2>
+          <select id="statsProjectFilter" class="filter-select">
+            <option value="">All Projects</option>
+          </select>
+        </div>
+        <div id="statsContent" class="stats-content">
+          <div class="stats-cards" id="statsCards"></div>
+          <div class="stats-chart-section">
+            <h3>Daily Token Usage</h3>
+            <canvas id="tokenChart" width="800" height="300"></canvas>
+          </div>
+          <div class="stats-breakdown" id="statsBreakdown"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modals -->
+  <div id="renameModal" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+      <h3>Rename Session</h3>
+      <input type="text" id="renameInput" placeholder="Enter session name...">
+      <div class="modal-actions">
+        <button id="renameCancelBtn" class="btn btn-cancel">Cancel</button>
+        <button id="renameSaveBtn" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tagModal" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+      <h3>Manage Tags</h3>
+      <div class="tag-input-row">
+        <input type="text" id="tagInput" placeholder="Add tag (press Enter)...">
+      </div>
+      <div id="tagList" class="tag-list"></div>
+      <div class="tag-suggestions">
+        <p class="tag-hint">Suggestions:</p>
+        <div id="tagSuggestions" class="tag-suggestions-list"></div>
+      </div>
+      <div class="modal-actions">
+        <button id="tagCloseBtn" class="btn btn-primary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="exportModal" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+      <h3>Export Conversation</h3>
+      <div class="export-options">
+        <button id="exportMdBtn" class="export-option">
+          <span class="export-icon">&#128196;</span>
+          <span>Markdown (.md)</span>
+        </button>
+        <button id="exportCopyBtn" class="export-option">
+          <span class="export-icon">&#128203;</span>
+          <span>Copy to Clipboard</span>
+        </button>
+        <button id="exportJsonBtn" class="export-option">
+          <span class="export-icon">&#128190;</span>
+          <span>JSON (.json)</span>
+        </button>
+      </div>
+      <div class="modal-actions">
+        <button id="exportCancelBtn" class="btn btn-cancel">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="searchModal" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content modal-large">
+      <h3>Global Search</h3>
+      <div class="search-input-row">
+        <input type="text" id="globalSearchInput" placeholder="Search across all conversations..." autofocus>
+        <select id="searchProjectFilter" class="filter-select">
+          <option value="">All Projects</option>
+        </select>
+      </div>
+      <div id="searchResults" class="search-results">
+        <p class="search-hint">Enter keywords to search in conversation content.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Scripts: modules load first, then main app -->
+  <script src="/modules/router.js"></script>
+  <script src="/modules/search.js"></script>
+  <script src="/modules/chat-view.js"></script>
+  <script src="/modules/stats.js"></script>
+  <script src="/modules/features.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

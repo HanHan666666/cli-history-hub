@@ -1,0 +1,151 @@
+# 浏览与导航
+
+## 概述
+
+用户通过项目列表、会话列表、时间分组、分支筛选和 URL 路由来定位并打开目标会话。
+
+## 关联功能
+
+- [搜索](search.md) - 搜索结果点击后跳转到会话详情
+- [对话详情](conversation-detail.md) - 点击会话卡片进入对话详情
+- [会话管理](session-management.md) - 收藏状态影响列表排序（Pinned 分组置顶）
+- [统计面板](stats.md) - 通过侧边栏按钮或 URL 路由进入统计页
+- [数据存储](data-storage.md) - 会话元数据的来源（JSONL + sidecar）
+- [API 参考](api-reference.md) - 项目列表和会话列表的 API 端点
+- [技术架构](architecture.md) - 路由和视图切换的整体设计
+
+## 功能细节
+
+### 项目列表
+
+侧边栏展示所有包含会话的项目，按会话数量降序排列。
+
+**显示内容：**
+- 项目短名称（路径最后两段，如 `br_work/myproject`）
+- 会话数量徽章
+- 当前选中项目高亮
+
+**交互：**
+- 点击项目 → 加载会话列表 → URL 变为 `#/project/{pid}`
+- 会自动更新侧边栏高亮状态
+
+### 会话列表
+
+展示选中项目的所有会话，支持时间分组和筛选。
+
+**会话卡片包含：**
+- 标题（智能标题逻辑，见下文）
+- 副标题（firstPrompt 预览，仅当与标题不同时显示）
+- 元信息行：修改时间、消息数、git 分支
+- 标签列表
+- 收藏星标（仅收藏的显示）
+
+**智能标题逻辑 (`smartTitle`)：**
+1. 有 `customName` → 直接用
+2. `displayName` 是通用词（hi/hello/test/untitled 等，或单词且 <= 6 字符）→ 尝试用 `firstPrompt`
+3. `firstPrompt` 超过 10 字符 → 截断到 80 字符显示
+4. 其他 → 用 `displayName`，兜底 "Untitled"
+
+### 时间分组
+
+会话按修改时间自动分组显示：
+
+| 分组名 | 条件 |
+|--------|------|
+| Pinned | `isFavorite === true` 的会话（始终置顶） |
+| Today | 今天 |
+| Yesterday | 昨天 |
+| This Week | 2-6 天前 |
+| This Month | 7-29 天前 |
+| Earlier | 30 天及更早 |
+
+**实现：** `getTimeGroup()` 函数将日期转为分组名，比较的是日历日期（不含时间），空分组不渲染。
+
+### 分支筛选
+
+会话列表头部的下拉框，可按 git 分支过滤会话。
+
+**实现：**
+1. 从当前项目的所有会话中收集唯一的 `gitBranch` 值
+2. 按字母排序填充到 `<select>` 中
+3. 选择分支后调用 `applyFilters()` 重新渲染列表
+4. "All Branches" 选项清除筛选
+
+### 列表内搜索
+
+会话列表头部的文本输入框，实时过滤会话。
+
+**搜索范围：** `displayName` + `firstPrompt` + `customName` + `tags`
+
+**实现：** 输入时触发 `input` 事件 → `applyFilters()` → 将搜索词与拼接的文本进行 `indexOf` 匹配。分支筛选和文本搜索可叠加。
+
+### URL 路由
+
+使用 hash 路由，支持浏览器前进/后退和直接访问。
+
+| 路由 | 视图 |
+|------|------|
+| `#/` | 欢迎页 |
+| `#/project/{pid}` | 会话列表 |
+| `#/project/{pid}/session/{sid}` | 对话详情 |
+| `#/stats` | 统计面板（全部项目） |
+| `#/stats/{pid}` | 统计面板（特定项目） |
+
+**路由机制：**
+- `Router.parseHash()` 解析 hash 为 `{ view, projectId, sessionId }`
+- `Router.handleRoute()` 调用对应的 `App.*` 方法
+- `App` 的操作反过来调用 `Router.navigate()` 设置 hash
+- 用 `_routerDriven` 和 `_navigating` 双标志防止循环调用
+
+**页面加载时：** 如果 URL 含有 hash，`Router.init()` 会解析并导航到对应视图。
+
+## 涉及的代码
+
+| 位置 | 文件 | 关键函数/行号 |
+|------|------|--------------|
+| 前端 | public/app.js:226-258 | `loadProjects()`, `renderProjectList()` |
+| 前端 | public/app.js:264-313 | `selectProject()`, `loadSessions()` |
+| 前端 | public/app.js:319-339 | `populateBranchFilter()` |
+| 前端 | public/app.js:345-382 | `applyFilters()` |
+| 前端 | public/app.js:388-508 | `renderSessionList()`, `renderTimeGroup()`, `createSessionCard()` |
+| 前端 | public/app.js:159-221 | `GENERIC_NAMES`, `smartTitle()`, `getTimeGroup()`, `TIME_GROUP_ORDER` |
+| 前端 | public/modules/router.js | `Router` 模块全部 |
+| 后端 | server.js:354-380 | `GET /api/projects` |
+| 后端 | server.js:385-394 | `GET /api/projects/:pid/sessions-full` |
+
+## API 接口
+
+- `GET /api/projects` → [API 参考](api-reference.md#projects)
+- `GET /api/projects/:pid/sessions-full` → [API 参考](api-reference.md#sessions-full)
+
+## 修改指南
+
+### 如果要修改会话列表排序
+
+1. 排序逻辑在 `server.js:187`（后端按 `modified` 降序）
+2. 前端收藏置顶在 `app.js:399-418`（先分 pinned/rest，再按时间分组）
+3. 如果要加新的排序维度，需后端传递字段 + 前端分组逻辑
+
+### 如果要增加新的时间分组
+
+1. 修改 `app.js` 的 `getTimeGroup()` 函数添加新的判断条件
+2. 在 `TIME_GROUP_ORDER` 数组中添加新分组名（决定显示顺序）
+
+### 如果要增加新的路由
+
+1. 修改 `router.js` 的 `parseHash()` 添加新的 segment 解析
+2. 修改 `handleRoute()` 添加新的 case 处理
+3. 在 `app.js` 的 `VIEW_IDS` 中添加新视图映射
+4. 在 `index.html` 中添加对应的 `<div class="view">` 容器
+
+### 如果要改项目列表显示
+
+1. 修改 `server.js` 的 `GET /api/projects` 返回更多字段
+2. 修改 `app.js` 的 `renderProjectList()` 渲染新内容
+
+## 已知问题 / TODO
+
+- [ ] 项目列表没有搜索/筛选功能
+- [ ] 会话列表不支持多选操作
+- [ ] 路由不支持 query 参数（如保持筛选状态）
+- [ ] 时间分组的判断基于浏览器本地时间
