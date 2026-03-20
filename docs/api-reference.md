@@ -424,6 +424,7 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
 | 参数 | 位置 | 说明 |
 |------|------|------|
 | `project` | Query | 可选。限定统计的项目 ID |
+| `days` | Query | 可选。时间范围天数，默认 30，范围 1-365 |
 
 ### 响应
 
@@ -437,19 +438,22 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
   },
   "totalSessions": 50,
   "totalMessages": 400,
+  "days": 30,
   "daily": [
-    { "date": "2026-03-15", "input": 50000, "output": 20000 }
+    { "date": "2026-03-15", "input": 50000, "output": 20000, "cacheCreation": 5000, "cacheRead": 10000 }
   ],
   "byProject": [
     {
       "projectId": "-Users-br-work-myproject",
       "projectName": "/Users/br_work/myproject",
       "input": 100000,
-      "output": 40000
+      "output": 40000,
+      "cacheCreation": 10000,
+      "cacheRead": 20000
     }
   ],
   "byModel": [
-    { "model": "claude-sonnet-4-6-20260319", "count": 150, "output": 300000 }
+    { "model": "claude-sonnet-4-6-20260319", "count": 150, "input": 50000, "output": 300000 }
   ]
 }
 ```
@@ -458,24 +462,26 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
 
 | 字段 | 说明 |
 |------|------|
-| `totalTokens` | 全量 Token 汇总（input / output / cache_creation / cache_read） |
+| `totalTokens` | 全量 Token 汇总（input / output / cacheCreation / cacheRead） |
 | `totalSessions` | 有消息的会话总数 |
 | `totalMessages` | 用户 + 助手消息总数 |
-| `daily` | 近 30 天每日 Token 用量，按日期升序排列 |
+| `days` | 请求的时间范围天数 |
+| `daily` | 指定时间范围内每日 Token 用量，按日期升序排列 |
 | `byProject` | 按项目汇总的 Token 用量，按总量降序排列 |
-| `byModel` | 按模型汇总的消息数和输出 Token，按消息数降序排列 |
+| `byModel` | 按模型汇总的消息数和 Token，按消息数降序排列 |
 
 ### 实现细节
 
-- `daily` 只包含最近 30 天的数据
+- `daily` 包含指定时间范围（`days` 参数）内的数据
 - Token 数据来自 assistant 消息的 `message.usage` 字段
-- 不使用缓存，每次请求重新扫描所有 JSONL 文件
+- 使用 60 秒内存缓存，相同参数的重复请求直接返回缓存结果
+- 缓存键为 `project:days` 组合
 
 ### 涉及代码
 
 | 文件 | 函数/行号 |
 |------|----------|
-| server.js:601-733 | `GET /api/stats` 路由 |
+| server.js:1069-1300 | `GET /api/stats` 路由 |
 
 ---
 

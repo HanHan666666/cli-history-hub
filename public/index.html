@@ -149,9 +149,20 @@
         <div class="view-header">
           <button id="statsBackBtn" class="btn-icon" title="Back">&larr;</button>
           <h2>Token Usage Statistics</h2>
-          <select id="statsProjectFilter" class="filter-select">
-            <option value="">All Projects</option>
-          </select>
+          <div class="header-filters">
+            <select id="statsProjectFilter" class="filter-select">
+              <option value="">All Projects</option>
+            </select>
+            <select id="statsDaysFilter" class="filter-select">
+              <option value="7">Last 7 days</option>
+              <option value="14">Last 14 days</option>
+              <option value="30" selected>Last 30 days</option>
+              <option value="60">Last 60 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="180">Last 180 days</option>
+              <option value="365">Last 365 days</option>
+            </select>
+          </div>
         </div>
         <div id="statsContent" class="stats-content">
           <div class="stats-cards" id="statsCards"></div>
