@@ -1411,39 +1411,6 @@ canvas#tokenChart {
   background: var(--bg-secondary);
 }
 
-/* Stats export button */
-.stats-export-section {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 16px;
-}
-
-.export-btn {
-  padding: 8px 16px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.export-btn:hover {
-  background: var(--accent-glow);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-/* Header filters row */
-.header-filters {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
 /* === Timeline Heatmap View === */
 .timeline-content {
   flex: 1;

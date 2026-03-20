@@ -103,9 +103,9 @@ Codex 的 JSONL 每行是一个 JSON 对象，`type` 字段区分行类型：
 
 ```json
 {
-  "id": "codex:-Users-br-work-myproject",
-  "name": "/Users/br_work/myproject",
-  "shortName": "br_work/myproject",
+  "id": "codex:-Users-username-myproject",
+  "name": "/Users/username/myproject",
+  "shortName": "username/myproject",
   "sessionCount": 10,
   "source": "codex"
 }

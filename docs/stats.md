@@ -23,29 +23,14 @@
 
 页面头部的下拉框可选择查看特定项目或全部项目的统计。切换时重新请求数据。
 
-### 时间范围筛选
-
-页面头部的时间范围下拉框支持选择：
-- Last 7 days
-- Last 14 days
-- Last 30 days（默认）
-- Last 60 days
-- Last 90 days
-- Last 180 days
-- Last 365 days
-
-切换时重新请求数据，图表自动适应数据量。
-
 ### 汇总卡片
 
-显示 6 个指标卡片：
+显示 4 个指标卡片：
 
 | 卡片 | 数据来源 |
 |------|---------|
 | Total Input Tokens | `totalTokens.input` |
 | Total Output Tokens | `totalTokens.output` |
-| Cache Creation | `totalTokens.cacheCreation` |
-| Cache Read | `totalTokens.cacheRead` |
 | Total Sessions | `totalSessions` |
 | Total Messages | `totalMessages` |
 
@@ -53,17 +38,15 @@
 
 ### 每日 Token 用量图表
 
-使用 Canvas 2D API 自绘的堆叠柱状图，展示选定时间范围内每日的 token 用量。
+使用 Canvas 2D API 自绘的柱状图，展示近 30 天每日的 output tokens 用量。
 
 **图表特性：**
-- 堆叠柱状图：绿色（Input tokens）在上，蓝色（Output tokens）在下
+- 仅显示 output tokens（蓝色柱子，颜色 `#58a6ff`）
 - Y 轴自动缩放到"漂亮"的数值（1/2/5/10 的倍数）
 - Y 轴标签使用 K/M 缩写（如 1.2K, 1.5M）
 - X 轴显示日期（MM-DD 格式），避免拥挤时间隔显示
 - 5 条水平网格线
 - 支持高 DPI 屏幕（`devicePixelRatio` 缩放）
-- **悬浮显示 tooltip**：鼠标悬停在柱子上显示日期、input tokens、output tokens、cache creation、cache read
-- 图例显示 Input 和 Output 的颜色说明
 - 无数据时显示 "No token usage data available"
 
 **Y 轴 "nice round up" 算法：**
@@ -95,16 +78,6 @@
 
 按消息数降序排列。
 
-### 数据导出
-
-点击 "Export to CSV" 按钮可导出统计数据为 CSV 文件，包含：
-- 汇总数据（Total tokens、sessions、messages）
-- 每日用量明细
-- 按项目分类
-- 按模型分类
-
-文件名格式：`cli-history-stats-YYYY-MM-DD.csv`
-
 ### 返回导航
 
 返回按钮的行为根据之前的视图状态决定：
@@ -116,20 +89,19 @@
 
 | 位置 | 文件 | 关键函数/行号 |
 |------|------|--------------|
-| 前端 | public/modules/stats.js:20-60 | `init()` - 事件绑定 |
-| 前端 | public/modules/stats.js:66-120 | `show()` - 加载并渲染统计数据 |
-| 前端 | public/modules/stats.js:126-145 | `populateProjectFilter()` |
-| 前端 | public/modules/stats.js:151-180 | `renderSummaryCards()` |
-| 前端 | public/modules/stats.js:186-380 | `renderDailyChart()` - Canvas 堆叠柱状图 |
-| 前端 | public/modules/stats.js:385-460 | `setupDailyChartTooltip()` - 悬浮提示 |
-| 前端 | public/modules/stats.js:465-480 | `niceRoundUp()` - Y 轴刻度算法 |
-| 前端 | public/modules/stats.js:486-600 | `renderBreakdown()` - 分类表格 |
-| 前端 | public/modules/stats.js:602-680 | `exportStatsToCSV()` - CSV 导出 |
-| 后端 | server.js:1069-1300 | `GET /api/stats` |
+| 前端 | public/modules/stats.js:20-54 | `init()` - 事件绑定 |
+| 前端 | public/modules/stats.js:60-99 | `show()` - 加载并渲染统计数据 |
+| 前端 | public/modules/stats.js:105-123 | `populateProjectFilter()` |
+| 前端 | public/modules/stats.js:129-152 | `renderSummaryCards()` |
+| 前端 | public/modules/stats.js:158-267 | `renderDailyChart()` - Canvas 柱状图 |
+| 前端 | public/modules/stats.js:272-282 | `niceRoundUp()` - Y 轴刻度算法 |
+| 前端 | public/modules/stats.js:288-341 | `renderBreakdown()` - 分类表格 |
+| 前端 | public/modules/stats.js:383-393 | `formatShortNumber()` - K/M 格式化 |
+| 后端 | server.js:601-733 | `GET /api/stats` |
 
 ## API 接口
 
-- `GET /api/stats?project=projectId&days=30` → [API 参考](api-reference.md#stats)
+- `GET /api/stats?project=projectId` → [API 参考](api-reference.md#stats)
 
 ## 修改指南
 
@@ -149,25 +121,27 @@
    - 替换 `renderDailyChart()` 的实现
    - 删除 `niceRoundUp()` 等辅助函数
 
-### 如果要修改时间范围选项
+### 如果要修改时间范围
 
-1. `index.html` 中修改 `statsDaysFilter` 的选项
-2. 后端 API 支持 1-365 天范围
+1. 后端 `server.js:619-620` 修改 `thirtyDaysAgo` 的计算
+2. 前端图表会自动适应数据量
+
+### 如果要加 cache_creation / cache_read 的展示
+
+1. 后端已经在 `totalTokens` 中包含了这两个字段
+2. 在 `renderSummaryCards()` 中添加两个新卡片
+3. 或在图表中添加堆叠柱子区分不同 token 类型
 
 ## 已知问题 / TODO
 
-- [x] ~~统计 API 没有缓存，每次请求全量扫描~~（已实现 60 秒缓存）
-- [x] ~~图表只显示 output tokens，没有 input tokens 对比~~（已实现堆叠柱状图）
-- [x] ~~没有 cache_creation 和 cache_read tokens 的可视化~~（已在 tooltip 和汇总卡片中显示）
-- [x] ~~没有数据导出功能（导出统计数据为 CSV）~~（已实现）
-- [x] ~~每日图表固定 30 天，不能自定义时间范围~~（已支持 7/14/30/60/90/180/365 天）
+- [ ] 统计 API 没有缓存，每次请求全量扫描
+- [ ] 图表只显示 output tokens，没有 input tokens 对比
+- [ ] 没有 cache_creation 和 cache_read tokens 的可视化
+- [ ] 图表没有 tooltip（悬停显示具体数值）
+- [ ] 没有数据导出功能（导出统计数据为 CSV）
+- [ ] 每日图表固定 30 天，不能自定义时间范围
 
 ### 最近优化记录 (Recent Updates)
-- **API 缓存**：统计 API 实现 60 秒内存缓存，减少重复扫描开销
-- **堆叠柱状图**：每日图表改为堆叠显示 Input（绿色）和 Output（蓝色）tokens
-- **Cache tokens 可视化**：汇总卡片新增 Cache Creation 和 Cache Read，tooltip 显示详细数据
-- **CSV 导出**：支持导出完整统计数据为 CSV 文件
-- **自定义时间范围**：支持 7 天到 365 天的时间范围选择
 - **看板交互穿越**：`By Project` 的报表行支持 hover 态与点击穿越，附带 `projectId` 触发 Router 单页无缝跳转回该项目的对话列表。
 - **多模型财务饼图 (Model Analytics)**：
   - 弃用基础的模型文本表格，在右侧新增基于纯原生 Vanilla JS 实现的 Canvas 甜甜圈图（Doughnut Chart）及交互式 Hover 图例。

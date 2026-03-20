@@ -19,10 +19,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ---------------------------------------------------------------------------
 const sessionCache = new Map();
 
-// Stats cache: keyed by cache key (project filter + days), stores { timestamp, data }
-const statsCache = new Map();
-const STATS_CACHE_TTL = 60 * 1000; // 60 seconds
-
 // ---------------------------------------------------------------------------
 // XML tag stripping for user messages
 // ---------------------------------------------------------------------------
@@ -1064,20 +1060,11 @@ app.get('/api/search', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. GET /api/stats?project=projectId&days=30
+// 6. GET /api/stats?project=projectId
 // ---------------------------------------------------------------------------
 app.get('/api/stats', (req, res) => {
   try {
     const projectFilter = req.query.project || null;
-    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
-    
-    // Check cache
-    const cacheKey = `${projectFilter || 'all'}:${days}`;
-    const cached = statsCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < STATS_CACHE_TTL) {
-      return res.json(cached.data);
-    }
-    
     const projectDirs = listProjectDirs();
     const targetDirs = projectFilter
       ? projectDirs.filter(p => p.dirName === projectFilter)
@@ -1087,14 +1074,14 @@ app.get('/api/stats', (req, res) => {
     let totalSessions = 0;
     let totalMessages = 0;
 
-    const dailyMap = new Map(); // date string -> { input, output, cacheCreation, cacheRead }
-    const byProjectMap = new Map(); // projectId -> { projectName, input, output, cacheCreation, cacheRead }
-    const byModelMap = new Map(); // model -> { count, input, output }
+    const dailyMap = new Map(); // date string -> { input, output }
+    const byProjectMap = new Map(); // projectId -> { projectName, input, output }
+    const byModelMap = new Map(); // model -> { count, output }
 
-    // Determine the time window
+    // Determine the 30-day window
     const now = new Date();
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - days);
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     for (const { dirName, dirPath } of targetDirs) {
       const projectPath = getProjectPath(dirPath);
@@ -1107,8 +1094,6 @@ app.get('/api/stats', (req, res) => {
 
       let projectInput = 0;
       let projectOutput = 0;
-      let projectCacheCreation = 0;
-      let projectCacheRead = 0;
       let projectSessionCount = 0;
 
       for (const file of files) {
@@ -1145,19 +1130,15 @@ app.get('/api/stats', (req, res) => {
 
             projectInput += inputTok;
             projectOutput += outputTok;
-            projectCacheCreation += cachCreation;
-            projectCacheRead += cachRead;
 
-            // Daily aggregation
+            // Daily aggregation (last 30 days only)
             if (obj.timestamp) {
               const ts = new Date(obj.timestamp);
-              if (ts >= startDate) {
+              if (ts >= thirtyDaysAgo) {
                 const dateStr = ts.toISOString().split('T')[0];
-                const existing = dailyMap.get(dateStr) || { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+                const existing = dailyMap.get(dateStr) || { input: 0, output: 0 };
                 existing.input += inputTok;
                 existing.output += outputTok;
-                existing.cacheCreation += cachCreation;
-                existing.cacheRead += cachRead;
                 dailyMap.set(dateStr, existing);
               }
             }
@@ -1185,8 +1166,6 @@ app.get('/api/stats', (req, res) => {
           projectName,
           input: projectInput,
           output: projectOutput,
-          cacheCreation: projectCacheCreation,
-          cacheRead: projectCacheRead,
         });
       }
     }
@@ -1200,7 +1179,6 @@ app.get('/api/stats', (req, res) => {
     for (const cp of targetCodexStats) {
       let projectInput = 0;
       let projectOutput = 0;
-      let projectCacheRead = 0;
       let projectSessionCount = 0;
 
       for (const sess of cp.sessions) {
@@ -1233,17 +1211,15 @@ app.get('/api/stats', (req, res) => {
 
               projectInput += inputTok;
               projectOutput += outputTok;
-              projectCacheRead += cachRead;
 
               // Daily aggregation
               if (obj.timestamp) {
                 const ts = new Date(obj.timestamp);
-                if (ts >= startDate) {
+                if (ts >= thirtyDaysAgo) {
                   const dateStr = ts.toISOString().split('T')[0];
-                  const existing = dailyMap.get(dateStr) || { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+                  const existing = dailyMap.get(dateStr) || { input: 0, output: 0 };
                   existing.input += inputTok;
                   existing.output += outputTok;
-                  existing.cacheRead += cachRead;
                   dailyMap.set(dateStr, existing);
                 }
               }
@@ -1272,21 +1248,13 @@ app.get('/api/stats', (req, res) => {
           projectName: cp.projectPath,
           input: projectInput,
           output: projectOutput,
-          cacheCreation: 0,
-          cacheRead: projectCacheRead,
         });
       }
     }
 
     // Build daily array sorted by date
     const daily = Array.from(dailyMap.entries())
-      .map(([date, vals]) => ({ 
-        date, 
-        input: vals.input, 
-        output: vals.output,
-        cacheCreation: vals.cacheCreation || 0,
-        cacheRead: vals.cacheRead || 0
-      }))
+      .map(([date, vals]) => ({ date, input: vals.input, output: vals.output }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
     // Build byProject array sorted by total descending
@@ -1298,20 +1266,14 @@ app.get('/api/stats', (req, res) => {
       .map(([model, vals]) => ({ model, count: vals.count, input: vals.input, output: vals.output }))
       .sort((a, b) => b.count - a.count);
 
-    const result = {
+    res.json({
       totalTokens,
       totalSessions,
       totalMessages,
       daily,
       byProject,
       byModel,
-      days,
-    };
-    
-    // Cache the result
-    statsCache.set(cacheKey, { timestamp: Date.now(), data: result });
-    
-    res.json(result);
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

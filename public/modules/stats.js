@@ -13,7 +13,6 @@ window.Stats = (function () {
   let statsCards;
   let tokenChart;
   let statsBreakdown;
-  let statsDaysFilter;
 
   const MODEL_PRICING = [
     { regex: /opus/i, in: 15, out: 75, color: '#a371f7' },
@@ -25,8 +24,6 @@ window.Stats = (function () {
 
   let modelChartMode = 'cost'; // 'cost' or 'tokens'
   let cachedByModelData = [];
-  let currentDays = 30;
-  let cachedStatsData = null;
 
   /**
    * Initialize the stats module: cache DOM elements, bind listeners.
@@ -38,7 +35,6 @@ window.Stats = (function () {
     statsCards = document.getElementById('statsCards');
     tokenChart = document.getElementById('tokenChart');
     statsBreakdown = document.getElementById('statsBreakdown');
-    statsDaysFilter = document.getElementById('statsDaysFilter');
 
     // Back button -> navigate back to previous view
     if (statsBackBtn) {
@@ -63,16 +59,7 @@ window.Stats = (function () {
     if (statsProjectFilter) {
       statsProjectFilter.addEventListener('change', function () {
         var projectId = statsProjectFilter.value || null;
-        show(projectId, currentDays);
-      });
-    }
-    
-    // Days filter change -> re-fetch stats
-    if (statsDaysFilter) {
-      statsDaysFilter.addEventListener('change', function () {
-        currentDays = parseInt(statsDaysFilter.value, 10) || 30;
-        var projectId = statsProjectFilter ? (statsProjectFilter.value || null) : null;
-        show(projectId, currentDays);
+        show(projectId);
       });
     }
   }
@@ -80,11 +67,8 @@ window.Stats = (function () {
   /**
    * Show the stats view and load data.
    * @param {string|null} projectId - optional project ID to filter
-   * @param {number} days - number of days for daily chart (default 30)
    */
-  async function show(projectId, days) {
-    currentDays = days || 30;
-    
+  async function show(projectId) {
     // Navigate to stats view
     if (window.App && typeof window.App.showView === 'function') {
       window.App.showView('stats');
@@ -98,17 +82,12 @@ window.Stats = (function () {
 
     // Populate project filter dropdown
     populateProjectFilter(projectId);
-    
-    // Set days filter value
-    if (statsDaysFilter) {
-      statsDaysFilter.value = String(currentDays);
-    }
 
     // Fetch stats from API
     try {
-      var url = '/api/stats?days=' + currentDays;
+      var url = '/api/stats';
       if (projectId) {
-        url += '&project=' + encodeURIComponent(projectId);
+        url += '?project=' + encodeURIComponent(projectId);
       }
 
       var data;
@@ -118,8 +97,6 @@ window.Stats = (function () {
         var res = await fetch(url);
         data = await res.json();
       }
-      
-      cachedStatsData = data;
 
       renderSummaryCards(data);
       renderDailyChart(data.daily || []);
@@ -166,16 +143,12 @@ window.Stats = (function () {
     var totalTokens = data.totalTokens || {};
     var inputTokens = totalTokens.input || 0;
     var outputTokens = totalTokens.output || 0;
-    var cacheCreation = totalTokens.cacheCreation || 0;
-    var cacheRead = totalTokens.cacheRead || 0;
     var totalSessions = data.totalSessions || 0;
     var totalMessages = data.totalMessages || 0;
 
     statsCards.innerHTML =
       createCard('Total Input Tokens', formatNumber(inputTokens)) +
       createCard('Total Output Tokens', formatNumber(outputTokens)) +
-      createCard('Cache Creation', formatNumber(cacheCreation)) +
-      createCard('Cache Read', formatNumber(cacheRead)) +
       createCard('Total Sessions', formatNumber(totalSessions)) +
       createCard('Total Messages', formatNumber(totalMessages));
   }
@@ -193,13 +166,6 @@ window.Stats = (function () {
   // Render daily token usage chart on canvas
   // -----------------------------------------------------------------------
 
-  // Cached bar positions for tooltip handling
-  var dailyBarPositions = [];
-  var dailyData = [];
-
-  /**
-   * Render daily token usage chart on canvas (stacked bars: input + output)
-   */
   function renderDailyChart(daily) {
     if (!tokenChart) return;
 
@@ -229,26 +195,18 @@ window.Stats = (function () {
     var chartWidth = width - padLeft - padRight;
     var chartHeight = height - padTop - padBottom;
 
-    // If no data, show message and clear bar positions
+    // If no data, show message
     if (!daily || daily.length === 0) {
       ctx.fillStyle = '#8b949e';
       ctx.font = '14px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('No token usage data available', width / 2, height / 2);
-      dailyBarPositions = [];
-      dailyData = [];
       return;
     }
 
-    // Cache daily data for tooltip
-    dailyData = daily;
-
-    // Calculate max total (input + output) for each day
-    var maxVal = 0;
-    for (var i = 0; i < daily.length; i++) {
-      var total = (daily[i].input || 0) + (daily[i].output || 0);
-      if (total > maxVal) maxVal = total;
-    }
+    // Extract output tokens for each day
+    var values = daily.map(function (d) { return d.output || 0; });
+    var maxVal = Math.max.apply(null, values);
     if (maxVal === 0) maxVal = 1; // avoid division by zero
 
     // Round up max for nice Y-axis
@@ -257,37 +215,6 @@ window.Stats = (function () {
     var barCount = daily.length;
     var barGap = Math.max(1, Math.floor(chartWidth / barCount * 0.2));
     var barWidth = Math.max(2, Math.floor((chartWidth - barGap * barCount) / barCount));
-
-    // Cache bar positions for tooltip
-    dailyBarPositions = [];
-    for (var j = 0; j < barCount; j++) {
-      var inputVal = daily[j].input || 0;
-      var outputVal = daily[j].output || 0;
-      var totalVal = inputVal + outputVal;
-      
-      var inputH = (inputVal / niceMax) * chartHeight;
-      var outputH = (outputVal / niceMax) * chartHeight;
-      var totalH = inputH + outputH;
-      
-      var x = padLeft + j * (barWidth + barGap) + barGap / 2;
-      var yOutput = padTop + chartHeight - totalH;
-      var yInput = yOutput + outputH;
-      
-      dailyBarPositions.push({
-        x: x,
-        yOutput: yOutput,
-        yInput: yInput,
-        width: barWidth,
-        inputHeight: inputH,
-        outputHeight: outputH,
-        totalHeight: totalH,
-        input: inputVal,
-        output: outputVal,
-        cacheCreation: daily[j].cacheCreation || 0,
-        cacheRead: daily[j].cacheRead || 0,
-        date: daily[j].date || ''
-      });
-    }
 
     // Draw grid lines (5 horizontal lines)
     ctx.strokeStyle = '#30363d';
@@ -298,8 +225,8 @@ window.Stats = (function () {
     ctx.textBaseline = 'middle';
 
     var gridLines = 5;
-    for (var g = 0; g <= gridLines; g++) {
-      var yVal = (niceMax / gridLines) * g;
+    for (var i = 0; i <= gridLines; i++) {
+      var yVal = (niceMax / gridLines) * i;
       var y = padTop + chartHeight - (yVal / niceMax) * chartHeight;
 
       ctx.beginPath();
@@ -311,21 +238,16 @@ window.Stats = (function () {
       ctx.fillText(formatShortNumber(yVal), padLeft - 8, y);
     }
 
-    // Draw stacked bars: output (blue) at bottom, input (green) on top
-    for (var k = 0; k < dailyBarPositions.length; k++) {
-      var bar = dailyBarPositions[k];
-      
-      // Output bar (blue) - bottom
-      if (bar.outputHeight > 0) {
-        ctx.fillStyle = '#58a6ff';
-        ctx.fillRect(bar.x, bar.yInput, bar.width, bar.outputHeight);
-      }
-      
-      // Input bar (green) - top
-      if (bar.inputHeight > 0) {
-        ctx.fillStyle = '#7ee787';
-        ctx.fillRect(bar.x, bar.yOutput, bar.width, bar.inputHeight);
-      }
+    // Draw bars
+    ctx.fillStyle = '#58a6ff';
+    for (var j = 0; j < barCount; j++) {
+      var val = values[j];
+      var barH = (val / niceMax) * chartHeight;
+      var x = padLeft + j * (barWidth + barGap) + barGap / 2;
+      var y2 = padTop + chartHeight - barH;
+
+      ctx.fillStyle = '#58a6ff';
+      ctx.fillRect(x, y2, barWidth, barH);
     }
 
     // Draw X-axis labels (show every Nth date to avoid crowding)
@@ -335,11 +257,10 @@ window.Stats = (function () {
     ctx.textBaseline = 'top';
 
     var labelInterval = Math.max(1, Math.ceil(barCount / 6));
-    for (var m = 0; m < barCount; m++) {
-      if (m % labelInterval === 0 || m === barCount - 1) {
-        var barInfo = dailyBarPositions[m];
-        var xLabel = barInfo.x + barInfo.width / 2;
-        var dateStr = daily[m].date || '';
+    for (var k = 0; k < barCount; k++) {
+      if (k % labelInterval === 0 || k === barCount - 1) {
+        var xLabel = padLeft + k * (barWidth + barGap) + barGap / 2 + barWidth / 2;
+        var dateStr = daily[k].date || '';
         // Show MM/DD format
         var shortDate = dateStr.substring(5); // "2026-03-15" -> "03-15"
         ctx.fillText(shortDate, xLabel, padTop + chartHeight + 8);
@@ -354,116 +275,6 @@ window.Stats = (function () {
     ctx.lineTo(padLeft, padTop + chartHeight);
     ctx.lineTo(width - padRight, padTop + chartHeight);
     ctx.stroke();
-    
-    // Draw legend
-    ctx.font = '11px -apple-system, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    
-    var legendX = padLeft;
-    var legendY = 8;
-    
-    // Output legend
-    ctx.fillStyle = '#58a6ff';
-    ctx.fillRect(legendX, legendY - 5, 12, 12);
-    ctx.fillStyle = '#8b949e';
-    ctx.fillText('Output', legendX + 16, legendY + 1);
-    
-    // Input legend
-    ctx.fillStyle = '#7ee787';
-    ctx.fillRect(legendX + 70, legendY - 5, 12, 12);
-    ctx.fillStyle = '#8b949e';
-    ctx.fillText('Input', legendX + 86, legendY + 1);
-
-    // Setup tooltip for daily chart
-    setupDailyChartTooltip(canvas);
-  }
-
-  /**
-   * Setup tooltip for daily chart - hover to show values
-   */
-  function setupDailyChartTooltip(canvas) {
-    // Remove existing tooltip if any
-    var existingTooltip = document.getElementById('chartTooltip');
-    if (existingTooltip) {
-      existingTooltip.remove();
-    }
-
-    // Create tooltip element
-    var tooltip = document.createElement('div');
-    tooltip.id = 'chartTooltip';
-    tooltip.style.cssText = 'position:absolute;display:none;background:rgba(22,27,34,0.95);color:#e6edf3;padding:8px 12px;border-radius:6px;font-size:12px;pointer-events:none;z-index:1000;border:1px solid #30363d;box-shadow:0 4px 12px rgba(0,0,0,0.4);';
-    document.body.appendChild(tooltip);
-
-    var currentHoverBar = null;
-
-    canvas.addEventListener('mousemove', function(e) {
-      var rect = canvas.getBoundingClientRect();
-      var x = e.clientX - rect.left;
-      var y = e.clientY - rect.top;
-
-      // Find which bar is being hovered
-      var hoveredBar = null;
-      for (var i = 0; i < dailyBarPositions.length; i++) {
-        var bar = dailyBarPositions[i];
-        if (x >= bar.x && x <= bar.x + bar.width &&
-            y >= bar.yOutput && y <= bar.yOutput + bar.totalHeight) {
-          hoveredBar = bar;
-          break;
-        }
-      }
-
-      if (hoveredBar) {
-        if (currentHoverBar !== hoveredBar) {
-          currentHoverBar = hoveredBar;
-          // Show tooltip
-          var dateStr = hoveredBar.date;
-          var formattedDate = dateStr;
-          if (dateStr.length === 10) {
-            // Format: 2026-03-15 -> Mar 15, 2026
-            var d = new Date(dateStr);
-            formattedDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          }
-          var tooltipHtml = '<div style="font-weight:600;margin-bottom:4px;">' + formattedDate + '</div>';
-          tooltipHtml += '<div style="color:#58a6ff;">Output: ' + formatNumber(hoveredBar.output) + ' tokens</div>';
-          tooltipHtml += '<div style="color:#7ee787;">Input: ' + formatNumber(hoveredBar.input) + ' tokens</div>';
-          if (hoveredBar.cacheCreation > 0) {
-            tooltipHtml += '<div style="color:#d29922;">Cache Creation: ' + formatNumber(hoveredBar.cacheCreation) + ' tokens</div>';
-          }
-          if (hoveredBar.cacheRead > 0) {
-            tooltipHtml += '<div style="color:#a371f7;">Cache Read: ' + formatNumber(hoveredBar.cacheRead) + ' tokens</div>';
-          }
-          tooltip.innerHTML = tooltipHtml;
-          tooltip.style.display = 'block';
-        }
-        // Position tooltip near cursor
-        var tooltipX = e.clientX + 15;
-        var tooltipY = e.clientY - 10;
-        // Keep tooltip in viewport
-        var tooltipRect = tooltip.getBoundingClientRect();
-        if (tooltipX + tooltipRect.width > window.innerWidth) {
-          tooltipX = e.clientX - tooltipRect.width - 15;
-        }
-        if (tooltipY + tooltipRect.height > window.innerHeight) {
-          tooltipY = e.clientY - tooltipRect.height - 10;
-        }
-        tooltip.style.left = tooltipX + 'px';
-        tooltip.style.top = tooltipY + 'px';
-        canvas.style.cursor = 'pointer';
-      } else {
-        if (currentHoverBar !== null) {
-          currentHoverBar = null;
-          tooltip.style.display = 'none';
-        }
-        canvas.style.cursor = 'default';
-      }
-    });
-
-    canvas.addEventListener('mouseleave', function() {
-      currentHoverBar = null;
-      tooltip.style.display = 'none';
-      canvas.style.cursor = 'default';
-    });
   }
 
   /**
@@ -492,11 +303,6 @@ window.Stats = (function () {
     var byModel = data.byModel || [];
 
     var html = '';
-
-    // Export button
-    html += '<div class="stats-export-section">';
-    html += '<button id="exportStatsBtn" class="export-btn">Export to CSV</button>';
-    html += '</div>';
 
     // By Project table
     html += '<div class="breakdown-section">';
@@ -586,94 +392,6 @@ window.Stats = (function () {
         }
       });
     });
-    
-    // Bind export button
-    var exportBtn = document.getElementById('exportStatsBtn');
-    if (exportBtn) {
-      exportBtn.addEventListener('click', function() {
-        exportStatsToCSV(data);
-      });
-    }
-  }
-
-  /**
-   * Export statistics to CSV file
-   */
-  function exportStatsToCSV(data) {
-    var csv = [];
-    
-    // Summary section
-    csv.push('CLI History Hub - Statistics Export');
-    csv.push('Generated: ' + new Date().toISOString());
-    csv.push('');
-    
-    // Total tokens
-    csv.push('Summary');
-    csv.push('Metric,Value');
-    var totalTokens = data.totalTokens || {};
-    csv.push('Total Input Tokens,' + (totalTokens.input || 0));
-    csv.push('Total Output Tokens,' + (totalTokens.output || 0));
-    csv.push('Total Cache Creation,' + (totalTokens.cacheCreation || 0));
-    csv.push('Total Cache Read,' + (totalTokens.cacheRead || 0));
-    csv.push('Total Sessions,' + (data.totalSessions || 0));
-    csv.push('Total Messages,' + (data.totalMessages || 0));
-    csv.push('');
-    
-    // Daily data
-    csv.push('Daily Token Usage');
-    csv.push('Date,Input Tokens,Output Tokens,Cache Creation,Cache Read');
-    var daily = data.daily || [];
-    daily.forEach(function(d) {
-      csv.push([
-        d.date || '',
-        d.input || 0,
-        d.output || 0,
-        d.cacheCreation || 0,
-        d.cacheRead || 0
-      ].join(','));
-    });
-    csv.push('');
-    
-    // By Project
-    csv.push('By Project');
-    csv.push('Project ID,Project Name,Input Tokens,Output Tokens,Cache Creation,Cache Read');
-    var byProject = data.byProject || [];
-    byProject.forEach(function(p) {
-      csv.push([
-        '"' + (p.projectId || '').replace(/"/g, '""') + '"',
-        '"' + (p.projectName || '').replace(/"/g, '""') + '"',
-        p.input || 0,
-        p.output || 0,
-        p.cacheCreation || 0,
-        p.cacheRead || 0
-      ].join(','));
-    });
-    csv.push('');
-    
-    // By Model
-    csv.push('By Model');
-    csv.push('Model,Messages,Input Tokens,Output Tokens');
-    var byModel = data.byModel || [];
-    byModel.forEach(function(m) {
-      csv.push([
-        '"' + (m.model || '').replace(/"/g, '""') + '"',
-        m.count || 0,
-        m.input || 0,
-        m.output || 0
-      ].join(','));
-    });
-    
-    // Create and download file
-    var csvContent = csv.join('\n');
-    var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    var link = document.createElement('a');
-    var url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'cli-history-stats-' + new Date().toISOString().split('T')[0] + '.csv');
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   }
 
   // Cached slices for hover redraws (avoid recalculating on every hover)

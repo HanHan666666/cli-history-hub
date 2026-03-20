@@ -47,16 +47,16 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
 ```json
 [
   {
-    "id": "-Users-br-work-myproject",
-    "name": "/Users/br_work/myproject",
-    "shortName": "br_work/myproject",
+    "id": "-Users-username-myproject",
+    "name": "/Users/username/myproject",
+    "shortName": "username/myproject",
     "sessionCount": 15,
     "source": "claude"
   },
   {
-    "id": "codex:-Users-br-work-myproject",
-    "name": "/Users/br_work/myproject",
-    "shortName": "br_work/myproject",
+    "id": "codex:-Users-username-myproject",
+    "name": "/Users/username/myproject",
+    "shortName": "username/myproject",
     "sessionCount": 10,
     "source": "codex"
   }
@@ -67,7 +67,7 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
 |------|------|------|
 | `id` | string | 项目 ID。Claude 项目为目录名，Codex 项目为 `codex:` + 路径转换 |
 | `name` | string | 项目的真实路径（从 JSONL 的 `cwd` 字段获取），找不到时从目录名反推 |
-| `shortName` | string | 路径最后两段，如 `br_work/myproject` |
+| `shortName` | string | 路径最后两段，如 `username/myproject` |
 | `sessionCount` | number | 会话数量（只计有消息的会话） |
 | `source` | string | 数据来源：`"claude"` 或 `"codex"` |
 
@@ -119,7 +119,7 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
     "created": "2026-03-01T10:00:00Z",
     "modified": "2026-03-01T11:30:00Z",
     "gitBranch": "feature/sort",
-    "projectPath": "/Users/br_work/myproject",
+    "projectPath": "/Users/username/myproject",
     "tags": ["算法", "重要"],
     "isFavorite": true
   }
@@ -210,7 +210,7 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
   ],
   "fileChanges": [
     {
-      "file": "/Users/br_work/myproject/sort.js",
+      "file": "/Users/username/myproject/sort.js",
       "changeCount": 1,
       "operations": [
         {
@@ -379,8 +379,8 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
 {
   "results": [
     {
-      "projectId": "-Users-br-work-myproject",
-      "projectName": "/Users/br_work/myproject",
+      "projectId": "-Users-username-myproject",
+      "projectName": "/Users/username/myproject",
       "sessionId": "abc123",
       "sessionName": "排序项目",
       "matchContext": "...帮我写一个排序算法...",
@@ -424,7 +424,6 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
 | 参数 | 位置 | 说明 |
 |------|------|------|
 | `project` | Query | 可选。限定统计的项目 ID |
-| `days` | Query | 可选。时间范围天数，默认 30，范围 1-365 |
 
 ### 响应
 
@@ -438,22 +437,19 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
   },
   "totalSessions": 50,
   "totalMessages": 400,
-  "days": 30,
   "daily": [
-    { "date": "2026-03-15", "input": 50000, "output": 20000, "cacheCreation": 5000, "cacheRead": 10000 }
+    { "date": "2026-03-15", "input": 50000, "output": 20000 }
   ],
   "byProject": [
     {
-      "projectId": "-Users-br-work-myproject",
-      "projectName": "/Users/br_work/myproject",
+      "projectId": "-Users-username-myproject",
+      "projectName": "/Users/username/myproject",
       "input": 100000,
-      "output": 40000,
-      "cacheCreation": 10000,
-      "cacheRead": 20000
+      "output": 40000
     }
   ],
   "byModel": [
-    { "model": "claude-sonnet-4-6-20260319", "count": 150, "input": 50000, "output": 300000 }
+    { "model": "claude-sonnet-4-6-20260319", "count": 150, "output": 300000 }
   ]
 }
 ```
@@ -462,26 +458,24 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
 
 | 字段 | 说明 |
 |------|------|
-| `totalTokens` | 全量 Token 汇总（input / output / cacheCreation / cacheRead） |
+| `totalTokens` | 全量 Token 汇总（input / output / cache_creation / cache_read） |
 | `totalSessions` | 有消息的会话总数 |
 | `totalMessages` | 用户 + 助手消息总数 |
-| `days` | 请求的时间范围天数 |
-| `daily` | 指定时间范围内每日 Token 用量，按日期升序排列 |
+| `daily` | 近 30 天每日 Token 用量，按日期升序排列 |
 | `byProject` | 按项目汇总的 Token 用量，按总量降序排列 |
-| `byModel` | 按模型汇总的消息数和 Token，按消息数降序排列 |
+| `byModel` | 按模型汇总的消息数和输出 Token，按消息数降序排列 |
 
 ### 实现细节
 
-- `daily` 包含指定时间范围（`days` 参数）内的数据
+- `daily` 只包含最近 30 天的数据
 - Token 数据来自 assistant 消息的 `message.usage` 字段
-- 使用 60 秒内存缓存，相同参数的重复请求直接返回缓存结果
-- 缓存键为 `project:days` 组合
+- 不使用缓存，每次请求重新扫描所有 JSONL 文件
 
 ### 涉及代码
 
 | 文件 | 函数/行号 |
 |------|----------|
-| server.js:1069-1300 | `GET /api/stats` 路由 |
+| server.js:601-733 | `GET /api/stats` 路由 |
 
 ---
 
@@ -509,8 +503,8 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
       "sessions": [
         {
           "sessionId": "abc123",
-          "projectId": "-Users-br-work-myproject",
-          "projectName": "br_work/myproject",
+          "projectId": "-Users-username-myproject",
+          "projectName": "username/myproject",
           "title": "排序项目",
           "messageCount": 30
         }
@@ -602,8 +596,8 @@ CLI History Hub 后端提供 9 个 RESTful API 端点，全部定义在 `server.
 {
   "prompts": [
     {
-      "projectId": "-Users-br-work-myproject",
-      "projectName": "/Users/br_work/myproject",
+      "projectId": "-Users-username-myproject",
+      "projectName": "/Users/username/myproject",
       "sessionId": "abc123",
       "sessionName": "排序项目",
       "text": "帮我写一个排序算法",
